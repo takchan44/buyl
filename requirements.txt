@@ -1,0 +1,8 @@
+streamlit
+pandas
+openpyxl
+plotly
+finance-datareader
+requests
+beautifulsoup4
+matplotlib
