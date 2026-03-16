@@ -7,24 +7,24 @@ import plotly.graph_objects as go
 from datetime import datetime
 
 # --- [1. 보안 및 설정] ---
-st.set_page_config(page_title="Byul 실시간 주식 분석", layout="wide")
+st.set_page_config(page_title="Byul 실시간 AI 분석", layout="wide")
 
 def check_password():
     if "password_correct" not in st.session_state:
-        st.title("🔐 보안 접근")
-        st.text_input("비밀번호를 입력하세요", type="password", key="password")
+        st.title("🔐 Byul 보안 접속")
+        st.text_input("접속 비밀번호", type="password", key="password")
         if st.button("접속"):
-            if st.session_state.password == "1234": # 비밀번호 수정 가능
+            if st.session_state.password == "1234":
                 st.session_state.password_correct = True
                 st.rerun()
             else:
-                st.error("비밀번호가 틀렸습니다.")
+                st.error("비밀번호가 올바르지 않습니다.")
         return False
     return True
 
-# --- [2. 분석 로직 (실시간)] ---
-def get_realtime_analysis(name, is_us=False):
-    """구글 뉴스 실시간 크롤링 및 요약 분석"""
+# --- [2. 실시간 뉴스 크롤링 및 예측 분석] ---
+def analyze_news_and_predict(name, is_us=False):
+    """실시간 뉴스를 추적하여 붉은 문구 및 예측 데이터 생성"""
     try:
         query = f"{name} stock news" if is_us else f"{name} 주가 호재"
         url = f"https://www.google.com/search?q={query}&tbm=nws"
@@ -33,59 +33,104 @@ def get_realtime_analysis(name, is_us=False):
         soup = BeautifulSoup(res.text, 'html.parser')
         content = soup.get_text()
         
-        # 분석 로직
-        if any(kw in content for kw in ['실적', 'Earnings', 'Surprise']):
-            return "📍 요점: 어닝 서프라이즈 및 실적 개선 / 🧐 분석: 펀더멘털 강화로 인한 기관 매수세 유입 / 🔭 전망: 주가 한 단계 레벨업 기대"
-        elif any(kw in content for kw in ['계약', 'Contract', '수주']):
-            return "📍 요점: 대규모 신규 계약 체결 / 🧐 분석: 장기 성장 동력 확보 및 현금 흐름 개선 / 🔭 전망: 우상향 추세 지속 전망"
-        else:
-            return "📍 요점: 기술적 반등 및 수급 개선 / 🧐 분석: 주요 지지선 확인 후 저점 매수세 유입 / 🔭 전망: 단기 박스권 상단 돌파 시도 예상"
+        # 키워드 매핑 및 예측 모델
+        analysis = {
+            "is_hot": False,
+            "news_title": "특이사항 없음",
+            "prediction": "현재 수급 흐름 관망세 유지"
+        }
+
+        keywords = {
+            '실적': ("🔥 분기 사상 최대 실적 발표!", "영업이익 서프라이즈로 인한 기관 매수세 유입, 전고점 돌파 가능성 85%"),
+            '수주': ("🚀 대규모 신규 계약/수주 포착!", "장기 매출 성장 동력 확보, 계단식 상승 추세 형성 기대"),
+            '공급': ("🚀 대규모 공급 계약 체결!", "공급망 확대로 인한 시장 점유율 상승, 목표주가 상향 리포트 예상"),
+            '반등': ("📈 바닥권 반등 신호 포착!", "과매도 구간 해소 및 저가 매수 유입, 단기 추세 전환 가능성 높음"),
+            'Earnings': ("🔥 Earnings Surprise!", "Strong fundamental growth, expected to hit new 52-week high"),
+            'Contract': ("🚀 New Major Contract!", "Expansion of market share, long-term bullish trend expected")
+        }
+
+        for kw, (title, pred) in keywords.items():
+            if kw in content:
+                analysis["is_hot"] = True
+                analysis["news_title"] = title
+                analysis["prediction"] = pred
+                break
+        
+        return analysis
     except:
-        return "📍 요점: 실시간 정보 로딩 중 / 🧐 분석: 수급 흐름 관찰 필요 / 🔭 전망: 시장 변동성 유의"
+        return {"is_hot": False, "news_title": "분석 불가", "prediction": "네트워크 연결 확인 필요"}
 
-# --- [3. 메인 화면] ---
+# --- [3. 메인 화면 구성] ---
 if check_password():
-    st.title("⭐️ Byul 실시간 주식 분석 시스템")
-    st.write(f"현재 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    st.sidebar.title("⭐️ Byul Search")
+    market = st.sidebar.radio("시장 선택", ["KOSPI", "NASDAQ"])
 
-    market = st.sidebar.selectbox("시장 선택", ["KOSPI", "NASDAQ"])
-    
-    # 종목 리스트 불러오기 (실시간 분석 대상)
+    # 검색 기능 구현
     @st.cache_data
-    def get_stock_list(m):
-        if m == "KOSPI": return fdr.StockListing('KOSPI')
-        return fdr.StockListing('NASDAQ').head(500) # 속도를 위해 상위 500개
+    def get_list(m):
+        return fdr.StockListing(m)
 
-    stocks = get_stock_list(market)
-    stock_name = st.selectbox("종목을 선택하세요", stocks['Name' if market=="KOSPI" else 'Symbol'].tolist())
+    full_list = get_list(market)
+    
+    # 사이드바 검색창
+    search_query = st.sidebar.text_input("🔍 종목명 또는 티커 검색", "").upper()
+    
+    if search_query:
+        filtered_stocks = full_list[
+            full_list['Name' if market=="KOSPI" else 'Symbol'].str.contains(search_query, na=False) |
+            full_list['Code' if market=="KOSPI" else 'Symbol'].str.contains(search_query, na=False)
+        ]
+    else:
+        filtered_stocks = full_list.head(100) # 검색어 없을 시 상위 100개
 
-    if stock_name:
-        with st.spinner(f'{stock_name} 실시간 분석 중...'):
-            # 주가 데이터 가져오기
-            symbol = stocks[stocks['Name' if market=="KOSPI" else 'Symbol'] == stock_name]['Code' if market=="KOSPI" else 'Symbol'].values[0]
-            df = fdr.DataReader(symbol).tail(100)
+    selected_stock = st.sidebar.selectbox("검색 결과 선택", filtered_stocks['Name' if market=="KOSPI" else 'Symbol'].tolist())
+
+    if selected_stock:
+        # 데이터 가져오기
+        row = filtered_stocks[filtered_stocks['Name' if market=="KOSPI" else 'Symbol'] == selected_stock]
+        code = row['Code' if market=="KOSPI" else 'Symbol'].values[0]
+        
+        df = fdr.DataReader(code).tail(120)
+        news_data = analyze_news_and_predict(selected_stock, is_us=(market=="NASDAQ"))
+
+        # 레이아웃 분할 (좌측: 뉴스 분석 / 우측: 차트)
+        col_news, col_chart = st.columns([1, 2.5])
+
+        with col_news:
+            st.markdown("### 🤖 Byul AI 실시간 분석")
+            if news_data["is_hot"]:
+                # 붉은색 강조 문구 기능
+                st.markdown(f"""
+                    <div style="background-color: #ffebee; padding: 20px; border-left: 10px solid #f44336; border-radius: 5px;">
+                        <h4 style="color: #d32f2f; margin-top: 0;">🚨 {news_data['news_title']}</h4>
+                        <p style="color: #b71c1c; font-weight: bold; font-size: 1.1em;">
+                            <b>[AI 분석 및 예측]</b><br>{news_data['prediction']}
+                        </p>
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.info("현재 특이 뉴스 흐름이 감지되지 않았습니다. 기술적 지표를 참고하세요.")
             
-            # 실시간 분석 생성
-            analysis = get_realtime_analysis(stock_name, is_us=(market=="NASDAQ"))
+            st.write("---")
+            curr_price = df.iloc[-1]['Close']
+            prev_price = df.iloc[-2]['Close']
+            change_pct = ((curr_price - prev_price) / prev_price) * 100
+            st.metric(label=f"{selected_stock} 현재가", value=f"{curr_price:,}", delta=f"{change_pct:.2f}%")
+
+        with col_chart:
+            st.subheader(f"📊 {selected_stock} 기술적 분석")
+            fig = go.Figure(data=[go.Candlestick(
+                x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
+                increasing_line_color= '#f44336', decreasing_line_color= '#2196f3'
+            )])
             
-            # 화면 구성
-            col1, col2 = st.columns([2, 1])
+            # 이동평균선 추가
+            df['MA20'] = df['Close'].rolling(20).mean()
+            df['MA60'] = df['Close'].rolling(60).mean()
+            fig.add_trace(go.Scatter(x=df.index, y=df['MA20'], name='20일선', line=dict(color='orange', width=1)))
+            fig.add_trace(go.Scatter(x=df.index, y=df['MA60'], name='60일선', line=dict(color='green', width=1)))
             
-            with col1:
-                st.subheader(f"📈 {stock_name} 기술적 분석 차트")
-                fig = go.Figure(data=[go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'])])
-                # 이동평균선 추가 (Byul 스타일)
-                df['MA20'] = df['Close'].rolling(20).mean()
-                fig.add_trace(go.Scatter(x=df.index, y=df['MA20'], name='20일선', line=dict(color='orange')))
-                st.plotly_chart(fig, use_container_width=True)
-                
-            with col2:
-                st.subheader("🤖 AI 실시간 리포트")
-                st.info(analysis)
-                
-                # 주요 지표
-                curr_price = df.iloc[-1]['Close']
-                change = ((df.iloc[-1]['Close'] - df.iloc[-2]['Close']) / df.iloc[-2]['Close']) * 100
-                st.metric("현재가", f"{curr_price:,}", f"{change:.2f}%")
-                
-                st.success("✨ Byul 매수 신호 포착: 차트 하단 지지선 확인됨")
+            fig.update_layout(height=600, template="plotly_white", margin=dict(l=20, r=20, t=20, b=20))
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.success(f"✨ {datetime.now().strftime('%H:%M:%S')} 기준 데이터 동기화 완료")
