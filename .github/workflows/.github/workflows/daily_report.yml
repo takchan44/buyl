@@ -1,0 +1,30 @@
+name: Global Stock Report
+
+on:
+  schedule:
+    - cron: '30 6 * * *'  # 한국 오후 3:30
+    - cron: '30 22 * * *' # 한국 오전 7:30
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - run: |
+          pip install finance-datareader pandas requests beautifulsoup4 openpyxl
+          python kospi_bot.py
+          python nasdaq_bot.py
+      - name: Commit changes
+        run: |
+          git config --global user.name "bot"
+          git config --global user.email "bot@test.com"
+          git add *.xlsx
+          git commit -m "Update data" || echo "No changes"
+          git push
